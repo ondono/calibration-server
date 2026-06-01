@@ -32,6 +32,12 @@ Run the server:
 calibration-server --host 0.0.0.0 --port 8080
 ```
 
+Or run the script directly from a checkout:
+
+```bash
+python3 apps/calibration_server.py --host 0.0.0.0 --port 8080
+```
+
 Then open `http://<pi-hostname-or-ip>:8080/` from another device on the local
 network.
 
@@ -48,4 +54,3 @@ Run tests:
 ```bash
 pytest
 ```
-
