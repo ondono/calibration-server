@@ -7,11 +7,11 @@ name = "calibration-server"
 version = "0.1.0"
 description = "Raspberry Pi CM5 dual CSI camera WebRTC streamer"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
 dependencies = [
   "aiohttp>=3.9,<4",
-  "aiortc>=1.9,<2",
-  "av>=12,<15",
+  "aiortc==1.9.0",
+  "av==12.3.0",
   "numpy>=1.24,<3",
 ]
 
@@ -30,4 +30,3 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-

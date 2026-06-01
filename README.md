@@ -12,7 +12,7 @@ Install OS camera prerequisites first:
 
 ```bash
 sudo apt update
-sudo apt install -y python3-picamera2 libcamera-apps
+sudo apt install -y python3-picamera2 libcamera-apps python3.11-venv
 ```
 
 Create a virtual environment and install the Python package:
@@ -25,6 +25,20 @@ python -m pip install -e ".[dev]"
 
 `--system-site-packages` is recommended on Raspberry Pi OS so the venv can see
 the distro-provided Picamera2/libcamera bindings.
+
+This project is pinned to `aiortc==1.9.0` and `av==12.3.0` because that PyAV
+release provides Linux aarch64 wheels for Python 3.11 and 3.12. Use the
+Raspberry Pi OS system Python instead of Python 3.13; otherwise pip may try to
+compile PyAV from source and require a matching FFmpeg development toolchain.
+
+If you intentionally need to build PyAV from source, install the FFmpeg headers
+and build tools first:
+
+```bash
+sudo apt install -y build-essential pkg-config cython3 \
+  libavformat-dev libavcodec-dev libavdevice-dev libavutil-dev \
+  libavfilter-dev libswscale-dev libswresample-dev
+```
 
 Run the server:
 
