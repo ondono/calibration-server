@@ -200,7 +200,7 @@ _INDEX_HTML = """<!doctype html>
         video.autoplay = true;
         video.playsInline = true;
         video.muted = true;
-        video.srcObject = event.streams[0] || new MediaStream([event.track]);
+        video.srcObject = new MediaStream([event.track]);
         videosEl.appendChild(video);
       };
       pc.addTransceiver("video", {direction: "recvonly"});
