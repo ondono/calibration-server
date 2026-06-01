@@ -5,6 +5,7 @@ import json
 import logging
 import threading
 import time
+import zlib
 from dataclasses import dataclass
 from fractions import Fraction
 from typing import Any
@@ -76,6 +77,7 @@ class DualCameraWebRtcServer:
         return web.Response(text=_INDEX_HTML, content_type="text/html")
 
     async def _health(self, _request: web.Request) -> web.Response:
+        frames = self._source.read_frames()
         return web.json_response(
             {
                 "server": {
@@ -86,6 +88,7 @@ class DualCameraWebRtcServer:
                     "streams": list(self._source.stream_names),
                 },
                 "source": self._source.status(),
+                "frames": _frame_diagnostics(frames),
             }
         )
 
@@ -148,6 +151,31 @@ class LatestFrameVideoTrack(VideoStreamTrack):
         return video_frame
 
 
+def _frame_diagnostics(frames: dict[str, np.ndarray]) -> dict[str, object]:
+    diagnostics: dict[str, object] = {
+        "streams": {},
+    }
+    stream_diagnostics = diagnostics["streams"]
+    assert isinstance(stream_diagnostics, dict)
+
+    for stream_name, frame in sorted(frames.items()):
+        sample = np.ascontiguousarray(frame[::16, ::16, :3])
+        stream_diagnostics[stream_name] = {
+            "shape": list(frame.shape),
+            "mean": round(float(frame.mean()), 3),
+            "sample_crc32": f"{zlib.crc32(sample.tobytes()):08x}",
+        }
+
+    names = sorted(frames)
+    if len(names) >= 2:
+        left = frames[names[0]].astype(np.int16)
+        right = frames[names[1]].astype(np.int16)
+        if left.shape == right.shape:
+            diagnostics["mean_abs_diff"] = round(float(np.abs(left - right).mean()), 3)
+
+    return diagnostics
+
+
 def run_server(source: FrameSource, config: WebRtcConfig, stop_event: threading.Event) -> None:
     async def _main() -> None:
         server = DualCameraWebRtcServer(source, config)
@@ -174,7 +202,9 @@ _INDEX_HTML = """<!doctype html>
     h1 { font-size: 16px; margin: 0; font-weight: 650; }
     button { font: inherit; padding: 7px 12px; border: 1px solid #52616f; background: #26323d; color: #fff; border-radius: 6px; }
     main { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 8px; padding: 8px; }
+    figure { margin: 0; position: relative; background: #000; }
     video { width: 100%; background: #000; aspect-ratio: 16 / 9; }
+    figcaption { position: absolute; left: 8px; top: 8px; padding: 3px 6px; background: rgba(0,0,0,.65); font-size: 12px; }
     .status { color: #aab8c5; font-size: 13px; }
   </style>
 </head>
@@ -188,32 +218,64 @@ _INDEX_HTML = """<!doctype html>
   <script>
     const statusEl = document.getElementById("status");
     const videosEl = document.getElementById("videos");
+    const connectButton = document.getElementById("connect");
     let pc;
+    let connecting = false;
 
-    document.getElementById("connect").onclick = async () => {
-      if (pc) pc.close();
+    connectButton.onclick = async () => {
+      if (connecting) return;
+      connecting = true;
+      connectButton.disabled = true;
+      statusEl.textContent = "connecting";
+      if (pc) {
+        pc.ontrack = null;
+        pc.close();
+      }
       videosEl.innerHTML = "";
       pc = new RTCPeerConnection();
+      const trackSlots = [];
+      let nextTrack = 0;
       pc.onconnectionstatechange = () => statusEl.textContent = pc.connectionState;
       pc.ontrack = (event) => {
+        const slot = trackSlots[nextTrack++] || makeVideoSlot(`track ${nextTrack}`);
         const video = document.createElement("video");
         video.autoplay = true;
         video.playsInline = true;
         video.muted = true;
         video.srcObject = new MediaStream([event.track]);
-        videosEl.appendChild(video);
+        slot.appendChild(video);
       };
       pc.addTransceiver("video", {direction: "recvonly"});
       pc.addTransceiver("video", {direction: "recvonly"});
-      await pc.setLocalDescription(await pc.createOffer());
-      const response = await fetch("/offer", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify(pc.localDescription),
-      });
-      if (!response.ok) throw new Error(await response.text());
-      await pc.setRemoteDescription(await response.json());
+      try {
+        await pc.setLocalDescription(await pc.createOffer());
+        const response = await fetch("/offer", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(pc.localDescription),
+        });
+        if (!response.ok) throw new Error(await response.text());
+        const answer = await response.json();
+        for (const streamName of answer.streams || ["camera_0", "camera_1"]) {
+          trackSlots.push(makeVideoSlot(streamName));
+        }
+        await pc.setRemoteDescription(answer);
+      } catch (error) {
+        statusEl.textContent = error.message;
+      } finally {
+        connecting = false;
+        connectButton.disabled = false;
+      }
     };
+
+    function makeVideoSlot(label) {
+      const figure = document.createElement("figure");
+      const caption = document.createElement("figcaption");
+      caption.textContent = label;
+      figure.appendChild(caption);
+      videosEl.appendChild(figure);
+      return figure;
+    }
   </script>
 </body>
 </html>
