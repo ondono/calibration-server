@@ -7,11 +7,11 @@ name = "calibration-server"
 version = "0.1.0"
 description = "Raspberry Pi CM5 dual CSI camera WebRTC streamer"
 readme = "README.md"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.11"
 dependencies = [
   "aiohttp>=3.9,<4",
-  "aiortc==1.9.0",
-  "av==12.3.0",
+  "aiortc==1.14.0",
+  "av==16.0.1",
   "numpy>=1.24,<3",
 ]
 
