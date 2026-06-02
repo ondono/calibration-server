@@ -129,18 +129,21 @@ class DualCameraWebRtcServer:
         await response.prepare(request)
 
         frame_delay = 1.0 / max(1, self._config.fps)
-        while not request.transport.is_closing():
+        while not _request_connection_closed(request):
             frames = self._source.read_frames()
             frame = frames.get(stream_name)
             if frame is not None:
                 jpeg = _encode_jpeg(frame)
-                await response.write(
-                    b"--frame\r\n"
-                    b"Content-Type: image/jpeg\r\n"
-                    + f"Content-Length: {len(jpeg)}\r\n\r\n".encode("ascii")
-                    + jpeg
-                    + b"\r\n"
-                )
+                try:
+                    await response.write(
+                        b"--frame\r\n"
+                        b"Content-Type: image/jpeg\r\n"
+                        + f"Content-Length: {len(jpeg)}\r\n\r\n".encode("ascii")
+                        + jpeg
+                        + b"\r\n"
+                    )
+                except ConnectionResetError:
+                    break
             await asyncio.sleep(frame_delay)
 
         return response
@@ -227,6 +230,11 @@ def _frame_diagnostics(frames: dict[str, np.ndarray]) -> dict[str, object]:
             diagnostics["mean_abs_diff"] = round(float(np.abs(left - right).mean()), 3)
 
     return diagnostics
+
+
+def _request_connection_closed(request: web.Request) -> bool:
+    transport = request.transport
+    return transport is None or transport.is_closing()
 
 
 def _encode_jpeg(frame: np.ndarray) -> bytes:

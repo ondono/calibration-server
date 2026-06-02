@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 
-from calibration_server.webrtc import _INDEX_HTML, _encode_jpeg, _frame_diagnostics
+from calibration_server.webrtc import (
+    _INDEX_HTML,
+    _encode_jpeg,
+    _frame_diagnostics,
+    _request_connection_closed,
+)
 
 
 def test_index_binds_each_video_element_to_one_track() -> None:
@@ -31,3 +38,9 @@ def test_encode_jpeg_converts_bgr_frame() -> None:
 
     assert jpeg.startswith(b"\xff\xd8")
     assert jpeg.endswith(b"\xff\xd9")
+
+
+def test_request_connection_closed_when_transport_is_missing() -> None:
+    request = SimpleNamespace(transport=None)
+
+    assert _request_connection_closed(request)
