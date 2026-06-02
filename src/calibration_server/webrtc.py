@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
 import threading
@@ -57,6 +58,8 @@ class DualCameraWebRtcServer:
         app = web.Application()
         app.router.add_get("/", self._index)
         app.router.add_get("/health", self._health)
+        app.router.add_get("/streams", self._streams)
+        app.router.add_get("/camera/{index}.mjpg", self._camera_stream)
         app.router.add_post("/offer", self._offer)
         self._runner = web.AppRunner(app)
         await self._runner.setup()
@@ -91,6 +94,56 @@ class DualCameraWebRtcServer:
                 "frames": _frame_diagnostics(frames),
             }
         )
+
+    async def _streams(self, request: web.Request) -> web.Response:
+        base_url = str(request.url.origin())
+        return web.json_response(
+            {
+                "streams": [
+                    {
+                        "name": stream_name,
+                        "label": stream_name,
+                        "url": f"{base_url}/camera/{index}.mjpg",
+                    }
+                    for index, stream_name in enumerate(self._source.stream_names)
+                ]
+            }
+        )
+
+    async def _camera_stream(self, request: web.Request) -> web.StreamResponse:
+        try:
+            index = int(request.match_info["index"])
+        except ValueError as exc:
+            raise web.HTTPNotFound(text="unknown camera") from exc
+
+        if index < 0 or index >= len(self._source.stream_names):
+            raise web.HTTPNotFound(text="unknown camera")
+
+        stream_name = self._source.stream_names[index]
+        response = web.StreamResponse(
+            headers={
+                "Cache-Control": "no-store",
+                "Content-Type": "multipart/x-mixed-replace; boundary=frame",
+            }
+        )
+        await response.prepare(request)
+
+        frame_delay = 1.0 / max(1, self._config.fps)
+        while not request.transport.is_closing():
+            frames = self._source.read_frames()
+            frame = frames.get(stream_name)
+            if frame is not None:
+                jpeg = _encode_jpeg(frame)
+                await response.write(
+                    b"--frame\r\n"
+                    b"Content-Type: image/jpeg\r\n"
+                    + f"Content-Length: {len(jpeg)}\r\n\r\n".encode("ascii")
+                    + jpeg
+                    + b"\r\n"
+                )
+            await asyncio.sleep(frame_delay)
+
+        return response
 
     async def _offer(self, request: web.Request) -> web.Response:
         try:
@@ -174,6 +227,18 @@ def _frame_diagnostics(frames: dict[str, np.ndarray]) -> dict[str, object]:
             diagnostics["mean_abs_diff"] = round(float(np.abs(left - right).mean()), 3)
 
     return diagnostics
+
+
+def _encode_jpeg(frame: np.ndarray) -> bytes:
+    try:
+        from PIL import Image
+    except ModuleNotFoundError as exc:
+        raise RuntimeError("Pillow is required for MJPEG stream output") from exc
+
+    rgb = np.ascontiguousarray(frame[:, :, :3][:, :, ::-1])
+    buffer = io.BytesIO()
+    Image.fromarray(rgb).save(buffer, format="JPEG", quality=85)
+    return buffer.getvalue()
 
 
 def run_server(source: FrameSource, config: WebRtcConfig, stop_event: threading.Event) -> None:

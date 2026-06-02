@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from calibration_server.webrtc import _INDEX_HTML, _frame_diagnostics
+from calibration_server.webrtc import _INDEX_HTML, _encode_jpeg, _frame_diagnostics
 
 
 def test_index_binds_each_video_element_to_one_track() -> None:
@@ -21,3 +21,13 @@ def test_frame_diagnostics_reports_distinct_streams() -> None:
     assert diagnostics["mean_abs_diff"] == 20.0
     streams = diagnostics["streams"]
     assert streams["camera_0"]["sample_crc32"] != streams["camera_1"]["sample_crc32"]
+
+
+def test_encode_jpeg_converts_bgr_frame() -> None:
+    frame = np.zeros((32, 32, 3), dtype=np.uint8)
+    frame[:, :, 2] = 255
+
+    jpeg = _encode_jpeg(frame)
+
+    assert jpeg.startswith(b"\xff\xd8")
+    assert jpeg.endswith(b"\xff\xd9")

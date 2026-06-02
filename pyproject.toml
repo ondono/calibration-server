@@ -13,6 +13,7 @@ dependencies = [
   "aiortc==1.14.0",
   "av==16.0.1",
   "numpy>=1.24,<3",
+  "Pillow>=10,<12",
 ]
 
 [project.optional-dependencies]
